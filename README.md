@@ -1,2 +1,2 @@
 # Vanilla-option-pricer
-Vanilla option price using local volatility model (BSM model &amp; CRR model) ; convergence test
+Vanilla option pricer using local volatility model (BSM model &amp; CRR model) ; convergence test
