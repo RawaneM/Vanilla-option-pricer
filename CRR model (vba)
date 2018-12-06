@@ -1,0 +1,258 @@
+Option Explicit
+Option Compare Text
+
+'Automate delete input
+Sub delete_input()
+ActiveSheet.Range("D7:D14").ClearContents
+ActiveSheet.Range("D19:D22").ClearContents
+End Sub
+'Automate delete pricing result
+Sub delete_result()
+ActiveSheet.Range("G7:G9").ClearContents
+ActiveSheet.Range("D19:D22").ClearContents
+Sheets("CRR TREE").Cells.delete
+End Sub
+Sub CRR_pricer_wo_tree()
+
+Dim wbPricer As Workbook
+Dim wsCRR As Worksheet
+Dim So As Double, K As Double
+Dim vol As Double, r As Double
+Dim expiry As Date, t_T As Long, T As Double, dt As Double
+Dim O_type As String, E_type As String
+Dim X As Long, Delta As Double
+
+Set wbPricer = ActiveWorkbook
+Set wsCRR = wbPricer.Sheets("CRR PRICER")
+
+'''''Identify inputs
+So = wsCRR.Range("D7").Value                                     'Stock Price
+K = wsCRR.Range("D8").Value                                       'Strike price
+expiry = wsCRR.Range("D9").Value                                       'Expiry date
+vol = wsCRR.Range("D10").Value                                     'Volatility
+r = wsCRR.Range("D11").Value                                        'Risk free rate
+X = wsCRR.Range("D12").Value                                    'Number of steps of computations
+O_type = wsCRR.Range("D13").Value                              'Option type (call/put)
+E_type = wsCRR.Range("D14").Value                                   'Exercise type (European/American)
+
+' Price by using a matrix allow us to do more computation the pricer crash if we exceed 10000 steps
+wsCRR.Range("G7") = CRR_Tree(So, K, expiry, vol, r, X, O_type, E_type)
+
+End Sub
+
+
+Sub CRR_Pricer()
+'''''''''''''''''''''''''Defining variables'''''''''''''''''''''''''
+'******************************************
+Dim wbPricer As Workbook
+Dim wsCRR As Worksheet
+Dim wsTREE As Worksheet
+Dim So As Double, K As Double, St As Double
+Dim vol As Double, r As Double
+Dim expiry As Date, t_T As Long, T As Double, dt As Double
+Dim O_type As String, E_type As String
+Dim u As Double, d As Double, q As Double, df As Double
+Dim X As Long, Steps As Long, Spot_initial As Double, Spot_T As Double, i As Long, h As Long, j As Long
+Dim Payoff_call As Double, Payoff_put As Double, Delta As Double
+Dim Pu As Double, Pd As Double
+
+Set wbPricer = ActiveWorkbook
+Set wsCRR = wbPricer.Sheets("CRR PRICER")
+Set wsTREE = wbPricer.Sheets("CRR TREE")
+
+'Make some cleaning
+wsCRR.Range("G7:G9").ClearContents
+wsCRR.Range("D19:D22").ClearContents
+wsTREE.Cells.delete
+
+'''''''''''''''''''''''''Implementing imputs'''''''''''''''''''''''''
+'*********************************************
+
+'''''Identify inputs
+So = wsCRR.Range("D7").Value                                     'Stock Price
+K = wsCRR.Range("D8").Value                                       'Strike price
+expiry = wsCRR.Range("D9").Value                                       'Expiry date
+vol = wsCRR.Range("D10").Value                                     'Volatility
+r = wsCRR.Range("D11").Value                                        'Risk free rate
+X = wsCRR.Range("D12").Value                                        'Number of steps
+O_type = wsCRR.Range("D13").Value                              'Option type (call/put)
+E_type = wsCRR.Range("D14").Value                               'Exercise type (European/American)
+
+'Error handling
+If wsCRR.Range("D7").Value = "" Then
+    MsgBox ("Please check your Spot price ")
+    Exit Sub
+ElseIf wsCRR.Range("D8").Value = "" Then
+    MsgBox ("Please check your strike price")
+    Exit Sub
+ElseIf wsCRR.Range("D9").Value = "" Then
+    MsgBox ("Please check the expiry date")
+    Exit Sub
+ElseIf wsCRR.Range("D10").Value = "" Then
+    MsgBox ("Please check your volatility")
+    Exit Sub
+ElseIf wsCRR.Range("D11").Value = "" Then
+    MsgBox ("Please check your risk-free rate")
+    Exit Sub
+ElseIf wsCRR.Range("D12").Value = "" Then
+    MsgBox ("Please enter a number of step")
+    Exit Sub
+End If
+
+'''''''''''''''''''''''''Computations'''''''''''''''''''''''''
+'**************************************
+'compute time to maturity
+t_T = DateDiff("d", Date, expiry)                           'Time to maturity
+T = t_T / 365
+
+'Useful shortcut computation
+dt = T / X                                     ' time step
+df = Exp(-r * dt)                                 'discount factor
+
+'Risk neutral computation
+u = Exp(vol * Sqr(dt))                       'Probabilty for an increase of the asset price
+d = 1 / u                                           'Probabilty for a decrease of the asset price
+q = ((Exp(r * dt)) - d) / (u - d)              'Risk neutral probabilty
+
+'Debug.Print T, u, d, q
+
+'''''''''''''''''''''''''Computation of the price'''''''''''''''''''''''''
+'*************************************************
+'Find and fill in the beginning of our tree
+Spot_initial = 4 + ((X - 1) * 2)
+wsTREE.Cells(Spot_initial, 1).Value = So
+wsTREE.Cells(Spot_initial, 1).HorizontalAlignment = xlCenter                                            'Center data within the cellsp
+wsTREE.Cells(Spot_initial, 1).Font.Bold = True                                                                  'Cells in bold
+
+'Display in the first lin the number of steps for Fashion needs ^^
+For i = 0 To X
+wsTREE.Cells(1, i + 1).Value = i
+wsTREE.Cells(1, i + 1).Interior.ColorIndex = 2
+wsTREE.Cells(1, i + 1).HorizontalAlignment = xlCenter
+wsTREE.Cells(1, i + 1).Borders(xlEdgeBottom).Weight = 4                                                     'Bottom border on the cell
+wsTREE.Cells(1, i + 1).Borders(xlEdgeRight).Weight = 4                                                          'Right border on the cell
+wsTREE.Cells(1, i + 1).Font.Bold = True                                                                                     'Cell in bold
+
+Next
+
+'''''''''''''''''''''''''Computation of the option price'''''''''''''''''''''''''
+'********************************************************
+For i = 0 To X
+
+'computation underlying price at T we create these formulas by use of a arithmetric sequence the same methods are used bellow
+Spot_T = So * (u ^ (X - i)) * (d ^ i)
+wsTREE.Cells(i * 4 + 2, X + 1).Value = Spot_T
+wsTREE.Cells(i * 4 + 2, X + 1).Interior.ColorIndex = 44
+wsTREE.Cells(i * 4 + 2, X + 1).Borders.Weight = xlThin
+wsTREE.Cells(i * 4 + 2, X + 1).HorizontalAlignment = xlCenter                                            'Center data within the cellsp
+wsTREE.Cells(i * 4 + 2, X + 1).Font.Bold = True
+
+'State the type of the option in order to display the right type
+    If O_type = "Call" Then
+    
+    'Compute the payoff f of a call option at T (St-K)
+    Payoff_call = Application.Max(0, Spot_T - K)
+    wsTREE.Cells(i * 4 + 3, X + 1).Value = Payoff_call
+    wsTREE.Cells(i * 4 + 3, X + 1).Interior.ColorIndex = 27
+    wsTREE.Cells(i * 4 + 3, X + 1).Borders.Weight = xlThin
+    wsTREE.Cells(i * 4 + 3, X + 1).HorizontalAlignment = xlCenter
+    wsTREE.Cells(i * 4 + 3, X + 1).Font.Bold = True
+    
+    Else
+    
+    'Compute the payoff f of a put option at T (K-St)
+    Payoff_put = Application.Max(0, K - Spot_T)
+    wsTREE.Cells(i * 4 + 3, X + 1).Value = Payoff_put
+    wsTREE.Cells(i * 4 + 3, X + 1).Interior.ColorIndex = 27
+    wsTREE.Cells(i * 4 + 3, X + 1).Borders.Weight = xlThin
+    wsTREE.Cells(i * 4 + 3, X + 1).HorizontalAlignment = xlCenter
+    wsTREE.Cells(i * 4 + 3, X + 1).Font.Bold = True
+    
+    End If
+    
+Next
+    
+'Computation of the underlying and option price at intermediate steps using two loops
+For i = 0 To X
+
+    For j = 1 To X - i
+    'computation underlying price at T we create these formulas by use of a arithmetric sequence the same methods are used bellow
+    
+    'Compute and display all previous underlying prices call
+    St = wsTREE.Cells(i * 2 + 4 * j - 2, X - i + 1).Value               'underlying position
+    Pu = wsTREE.Cells(i * 2 + 4 * j + 1 - 2, X - i + 1).Value 'underlying price up
+    Pd = wsTREE.Cells(i * 2 + 4 * j + 1 + 2, X - i + 1).Value 'underlying price down
+
+    wsTREE.Cells(i * 2 + 4 * j, X - i).Value = St / u
+    wsTREE.Cells(i * 2 + 4 * j, X - i).Interior.ColorIndex = 27
+    wsTREE.Cells(i * 2 + 4 * j, X - i).Borders.Weight = xlThin
+    wsTREE.Cells(i * 2 + 4 * j, X - i).HorizontalAlignment = xlCenter
+    wsTREE.Cells(i * 2 + 4 * j, X - i).Font.Bold = True
+    
+            'Computation on fu and fd is at the end of the code
+            If O_type = "Call" Then
+            
+                    'Lets compute and display the call price
+                    If E_type = "American" Then
+                    wsTREE.Cells(i * 2 + 4 * j + 1, X - i).Value = Application.Max(EU_op(Pu, Pd, q, df), wsTREE.Cells(i * 2 + 4 * j, X - i).Value - K)
+                    Else
+                    wsTREE.Cells(i * 2 + 4 * j + 1, X - i).Value = EU_op(Pu, Pd, q, df)
+                    End If
+                    wsTREE.Cells(i * 2 + 4 * j + 1, X - i).Interior.ColorIndex = 17
+                    wsTREE.Cells(i * 2 + 4 * j + 1, X - i).Borders.Weight = xlThin
+                    wsTREE.Cells(i * 2 + 4 * j + 1, X - i).HorizontalAlignment = xlCenter
+                    wsTREE.Cells(i * 2 + 4 * j + 1, X - i).Font.Bold = True
+                                       
+            Else
+            
+                    'Lets compute and display the put price
+                    If E_type = "American" Then
+                    wsTREE.Cells(i * 2 + 4 * j + 1, X - i).Value = Application.Max(EU_op(Pu, Pd, q, df), K - wsTREE.Cells(i * 2 + 4 * j, X - i).Value)
+                    Else
+                    wsTREE.Cells(i * 2 + 4 * j + 1, X - i).Value = EU_op(Pu, Pd, q, df)
+                    End If
+                    wsTREE.Cells(i * 2 + 4 * j + 1, X - i).Interior.ColorIndex = 17
+                    wsTREE.Cells(i * 2 + 4 * j + 1, X - i).Borders.Weight = xlThin
+                    wsTREE.Cells(i * 2 + 4 * j + 1, X - i).HorizontalAlignment = xlCenter
+                    wsTREE.Cells(i * 2 + 4 * j + 1, X - i).Font.Bold = True
+            
+            End If
+          
+    Next
+        
+Next
+
+'Compute the delta
+Delta = (wsTREE.Cells(Spot_initial - 1, 2).Value - wsTREE.Cells(Spot_initial + 3, 2).Value) / (wsTREE.Cells(Spot_initial - 2, 2).Value - wsTREE.Cells(Spot_initial + 2, 2).Value)
+
+'''''''''''''''''''''''''Display output'''''''''''''''''''''''''
+'**************************************
+'Generated Inputs
+wsCRR.Range("D19").Value = u
+wsCRR.Range("D20").Value = d
+wsCRR.Range("D21").Value = q
+wsCRR.Range("D22").Value = t_T & " " & "Days"
+wsCRR.Range("G9").Value = Delta
+'Debug.Print Delta
+'Pricing result
+If O_type = "Call" Then
+wsCRR.Range("G7").Value = wsTREE.Cells(Spot_initial + 1, 1).Value
+Else
+wsCRR.Range("G8").Value = wsTREE.Cells(Spot_initial + 1, 1).Value
+End If
+
+MsgBox ("Done ! Let's have a look at the TREE ")
+
+'Zoom the CRR TREE Worksheet in order to see the full size of the tree
+wsTREE.Activate
+wsTREE.UsedRange.Select
+ActiveWindow.Zoom = True
+  
+End Sub
+
+'European option pricing formula under CRR
+Function EU_op(Pu As Double, Pd As Double, q As Double, df As Double)
+        EU_op = (q * Pu + (1 - q) * Pd) * df
+End Function
+
+
