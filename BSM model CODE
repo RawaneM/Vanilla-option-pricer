@@ -1,0 +1,181 @@
+Option Compare Text
+'Option Explicit
+'Automate delete input
+Sub delete_input()
+ActiveSheet.Range("D7:D14").ClearContents
+ActiveSheet.Range("D19").ClearContents
+End Sub
+'Automate delete pricing result
+Sub delete_result()
+ActiveSheet.Range("G7:G8").ClearContents
+ActiveSheet.Range("J7:J11").ClearContents
+ActiveSheet.Range("D19").ClearContents
+End Sub
+
+'***********************
+'**** BSM Formula ****'
+ '***********************
+'Call Vanille
+'**************
+Function c_eu(S As Double, K As Double, T As Double, r As Double, vol As Double) As Double
+Dim rt As Double
+Dim d0 As Double
+Dim d1 As Double
+
+rt = Sqr(T)
+K_star = K * Exp(-r * T)
+
+d0 = ((1 / (vol * rt)) * (Log(S / K_star))) - (0.5 * vol * rt)
+d1 = d0 + (vol * rt)
+
+c_eu = (S * NN(d1)) - ((K * Exp(-r * T)) * NN(d0))
+'c_eu = (S * Application.NormSDist(d1)) - ((K * Exp(-r * t)) * Application.NormSDist(d0))
+
+End Function
+
+'Put Vanille
+'************
+Function p_eu(S As Double, K As Double, T As Double, r As Double, vol As Double) As Double
+Dim rt As Double
+Dim d0 As Double
+Dim d1 As Double
+
+rt = Sqr(T)
+K_star = K * Exp(-r * T)
+d0 = ((1 / (vol * rt)) * Log(S / K_star)) - (0.5 * vol * rt)
+d1 = d0 + (vol * rt)
+
+p_eu = ((K * Exp(-r * T)) * NN(-d0)) - (S * NN(-d1))
+End Function
+
+Sub price_BSM()
+Dim wbPricer As Workbook
+Dim wsBSM As Worksheet
+Dim S As Double, K  As Double
+Dim vol As Double, r As Double
+Dim expiry As Date, T As Double
+Dim O_type As String, E_type As String
+
+'Error Handler
+On Error GoTo errhandler
+    
+Set wbPricer = ThisWorkbook
+Set wsBSM = wbPricer.Sheets("BSM PRICER")
+
+S = wsBSM.Range("D7").Value                                        'Stock Price
+K = wsBSM.Range("D8").Value                                        'Strike price
+expiry = wsBSM.Range("D9").Value                                 'Expiry date
+vol = wsBSM.Range("D10").Value                                    'Volatility
+r = wsBSM.Range("D11").Value                                       'Risk free rate
+O_type = wsBSM.Range("D13").Value                              'Option type (call/put)
+E_type = wsBSM.Range("D14").Value                              'Exercice type (European/American)
+t_T = DateDiff("d", Date, expiry)                                     'Time to maturity
+T = t_T / 365                                                                  'Time convention
+
+'Generate the time to maturity for information
+wsBSM.Range("D19").Value = t_T & " " & "Days"
+
+
+'Display the Call price and greeks
+If O_type = "Call" Then
+    wsBSM.Range("G8").ClearContents
+    wsBSM.Range("G7").Value = c_eu(S, K, T, r, vol)
+    wsBSM.Range("J7").Value = Delta(S, K, T, r, vol, O_type)
+    wsBSM.Range("J8").Value = Gamma(S, K, T, r, vol, O_type)
+    wsBSM.Range("J9").Value = Vega(S, K, T, r, vol, O_type)
+    wsBSM.Range("J10").Value = Theta(S, K, T, r, vol, O_type)
+    wsBSM.Range("J11").Value = Rho(S, K, T, r, vol, O_type)
+'Compute the Put price and greeks
+Else
+    wsBSM.Range("G7").ClearContents
+    wsBSM.Range("G8").Value = p_eu(S, K, T, r, vol)
+    wsBSM.Range("J7").Value = Delta(S, K, T, r, vol, O_type)
+    wsBSM.Range("J8").Value = Gamma(S, K, T, r, vol, O_type)
+    wsBSM.Range("J9").Value = Vega(S, K, T, r, vol, O_type)
+    wsBSM.Range("J10").Value = Theta(S, K, T, r, vol, O_type)
+    wsBSM.Range("J11").Value = Rho(S, K, T, r, vol, O_type)
+End If
+
+    Exit Sub
+    
+'Error handler
+errhandler:
+    MsgBox ("Check your inputs ")
+
+End Sub
+
+'**** Greeks ****
+'Delta
+'******
+Function Delta(S As Double, K As Double, T As Double, r As Double, vol As Double, O_type As String) As Double
+temp = S * 1E-05
+If O_type = "Call" Then
+Delta = (c_eu(S + temp / 2, K, T, r, vol) - c_eu(S - temp / 2, K, T, r, vol)) / temp
+ElseIf O_type = "Put" Then
+Delta = (p_eu(S + temp / 2, K, T, r, vol) - p_eu(S - temp / 2, K, T, r, vol)) / temp
+End If
+
+End Function
+'Gamma
+'********
+Function Gamma(S As Double, K As Double, T As Double, r As Double, vol As Double, O_type As String) As Double
+temp = S * 1E-05
+If O_type = "Call" Then
+Gamma = (Delta(S + temp / 2, K, T, r, vol, O_type) - Delta(S - temp / 2, K, T, r, vol, O_type)) / temp
+ElseIf O_type = "Put" Then
+Gamma = (Delta(S + temp / 2, K, T, r, vol, O_type) - Delta(S - temp / 2, K, T, r, vol, O_type)) / temp
+End If
+End Function
+'Vega
+'*****
+Function Vega(S As Double, K As Double, T As Double, r As Double, vol As Double, O_type As String) As Double
+temp = vol * 1E-05
+If O_type = "Call" Then
+Vega = (c_eu(S, K, T, r, vol + temp / 2) - c_eu(S, K, T, r, vol - temp / 2)) / temp / 100
+ElseIf O_type = "Put" Then
+Vega = (p_eu(S, K, T, r, vol + temp / 2) - p_eu(S, K, T, r, vol - temp / 2)) / temp / 100
+End If
+End Function
+'Theta
+'******
+Function Theta(S As Double, K As Double, T As Double, r As Double, vol As Double, O_type As String) As Double
+temp = T * 1E-05
+If O_type = "Call" Then
+Theta = -(c_eu(S, K, T + temp / 2, r, vol) - c_eu(S, K, T - temp / 2, r, vol)) / temp / 100
+ElseIf O_type = "Put" Then
+Theta = -(p_eu(S, K, T + temp / 2, r, vol) - p_eu(S, K, T - temp / 2, r, vol)) / temp / 100
+End If
+End Function
+'Rho
+'****
+Function Rho(S As Double, K As Double, T As Double, r As Double, vol As Double, O_type As String) As Double
+temp = r * 1E-05
+If O_type = "Call" Then
+Rho = (c_eu(S, K, T, r + temp / 2, vol) - c_eu(S, K, T, r - temp / 2, vol)) / temp / 100
+ElseIf O_type = "Put" Then
+Rho = (p_eu(S, K, T, r + temp / 2, vol) - p_eu(S, K, T, r - temp / 2, vol)) / temp / 100
+End If
+End Function
+
+'Cumulative distribution function approximation from session 3
+'***************************************************************
+Function NN(X)
+Const pi = 3.14
+Const alp = 0.2316419
+Const a1 = 0.31938153
+Const a2 = -0.356563782
+Const a3 = 1.781477937
+Const a4 = -1.821255978
+Const a5 = 1.330274429
+
+y = 1 / (1 + (alp * X))
+
+prt1 = Exp(-X ^ 2 / 2) / Sqr(2 * pi)
+prt2 = (a1 * y) + (a2 * y ^ 2) + (a3 * y ^ 3) + (a4 * y ^ 4) + (a5 * y ^ 5)
+
+If X >= 0 Then
+    NN = 1 - (prt1 * prt2)
+ElseIf X < 0 Then
+    NN = 1 - NN(-X)
+End If
+End Function
