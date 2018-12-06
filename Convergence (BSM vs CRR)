@@ -1,0 +1,120 @@
+'Automate delete input
+Sub convergence_delete_output()
+ActiveSheet.Range("I5:J27").ClearContents
+End Sub
+
+Sub convergence_BSM_CRR()
+Dim wsCONV As Worksheet
+Dim wbPricer As Workbook
+Dim wsBSM As Worksheet
+Dim expiry As Date, O_type As String, E_type As String
+
+Set wbPricer = ActiveWorkbook
+Set wsBSM = wbPricer.Sheets("BSM PRICER")
+Set wsCONV = wbPricer.Sheets("CONVERGENCE")                                                       '   wbPricer.Sheets("CONVERGENCE")
+
+'Error handling
+If wsCONV.Range("D4").Value = "" Then
+    MsgBox ("Please check your Spot price ")
+    Exit Sub
+ElseIf wsCONV.Range("D5").Value = "" Then
+    MsgBox ("Please check your strike price")
+    Exit Sub
+ElseIf wsCONV.Range("D6").Value = "" Then
+    MsgBox ("Please check the expiry date")
+    Exit Sub
+ElseIf wsCONV.Range("D7").Value = "" Then
+    MsgBox ("Please check your volatility")
+    Exit Sub
+ElseIf wsCONV.Range("D8").Value = "" Then
+    MsgBox ("Please check your risk-free rate")
+    Exit Sub
+End If
+
+' We implement every features of the option in our BSM model pricer and call the procedure
+wsBSM.Range("D7") = wsCONV.Range("D4").Value
+wsBSM.Range("D8") = wsCONV.Range("D5").Value
+wsBSM.Range("D9") = wsCONV.Range("D6").Value
+wsBSM.Range("D10") = wsCONV.Range("D7").Value
+wsBSM.Range("D11") = wsCONV.Range("D8").Value
+wsBSM.Range("D13") = wsCONV.Range("D9").Value
+wsBSM.Range("D14") = wsCONV.Range("D10").Value
+
+' In order to use the CRR function pricer with the matrix (without displaying the tree) which allow us to price swiftly the option we register variables
+S = wsCONV.Range("D4").Value
+K = wsCONV.Range("D5").Value
+expiry = wsCONV.Range("D6").Value
+vol = wsCONV.Range("D7").Value
+r = wsCONV.Range("D8").Value
+O_type = wsCONV.Range("D9").Value
+E_type = wsCONV.Range("D10").Value
+
+' We launch a loop in order to fill the cells for the CRR pricing model
+For i = 5 To 27
+wsCONV.Cells(i, 9) = CRR_Tree(S, K, expiry, vol, r, wsCONV.Cells(i, 8).Value, O_type, E_type)
+Next i
+
+' Use of the BSM model pricer by calling the procedure
+Call price_BSM
+' Display the result of the BSM pricing
+If O_type = "Call" Then
+wsCONV.Range("J5:J27") = wsBSM.Range("G7").Value
+Else
+wsCONV.Range("J5:J27") = wsBSM.Range("G8").Value
+End If
+
+End Sub
+
+'********** CRR pricing with MATRIX************
+'Useful for the convergence calculation
+' I took the same input as described in the CRR module
+Function CRR_Tree(Spot, K, expiry As Date, vol, r, X, O_type As String, E_type As String)
+t_T = DateDiff("d", Date, expiry)
+dt = t_T / (X * 365)
+u = Exp(vol * (dt ^ 0.5))
+d = 1 / u
+p = (Exp(r * dt) - d) / (u - d)
+
+' A matrix for stock price
+Dim S() As Double
+ReDim S(X + 1, X + 1) As Double
+
+For i = 1 To X + 1
+    For j = i To X + 1
+        S(i, j) = Spot * u ^ (j - i) * d ^ (i - 1)
+    Next j
+Next i
+
+' Compute the Price for Calls and Puts
+Dim Op() As Double
+ReDim Op(X + 1, X + 1) As Double
+                
+For i = 1 To X + 1
+Select Case O_type
+    Case "Call": Op(i, X + 1) = Application.Max(S(i, X + 1) - K, 0)
+     Case "Put": Op(i, X + 1) = Application.Max(K - S(i, X + 1), 0)
+End Select
+Next i
+
+' Compute remaining entries for Calls and Puts
+For j = X To 1 Step -1
+    For i = 1 To j
+    Select Case E_type
+    Case "American":
+        If O_type = "Call" Then
+            Op(i, j) = Application.Max(S(i, j) - K, Exp(-r * dt) * (p * Op(i, j + 1) + (1 - p) * Op(i + 1, j + 1)))
+        ElseIf O_type = "Put" Then
+            Op(i, j) = Application.Max(K - S(i, j), Exp(-r * dt) * (p * Op(i, j + 1) + (1 - p) * Op(i + 1, j + 1)))
+        End If
+    Case "European":
+            Op(i, j) = Exp(-r * dt) * (p * Op(i, j + 1) + (1 - p) * Op(i + 1, j + 1))
+    End Select
+    Next i
+Next j
+
+' Display the value to the option within the matrix
+CRR_Tree = Op(1, 1)
+
+End Function
+
+
